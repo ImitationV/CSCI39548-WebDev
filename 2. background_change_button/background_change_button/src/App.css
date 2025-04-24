@@ -2,16 +2,16 @@ body,
 html {
   margin: 0;
   padding: 0;
-  height: 100%; /* Make the body and html take up the full viewport height */
+  height: 100%;
 }
 
 .app {
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 100vh; /* Ensure the container takes up at least the full viewport height */
-  width: 100vw; /* Make the app full width */
-  transition: background-color 0.3s ease; /* Add a smooth transition for color change */
+  min-height: 100vh;
+  width: 100vw;
+  transition: background-color 0.3s ease;
 }
 
 button {
