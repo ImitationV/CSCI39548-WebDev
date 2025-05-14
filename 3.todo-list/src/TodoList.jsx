@@ -1,100 +1,149 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './SupabaseClient';
 
-const TodoList = () => {
+// Receive user from the parent component App.jsx
+const TodoList = ({ user }) => {
   const [todos, setTodos] = useState([]);
   const [newTaskDescription, setNewTaskDescription] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // Loading state for fetching todos
   const [error, setError] = useState(null);
 
-  // Fetch todos from Supabase
+  console.log('User: ', user); // Log the user
+
+  // Function to handle user logout
+  const handleLogout = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        throw error;
+      }
+      // Supabase auth listener in App.jsx handles state change and redirect
+    } catch (error) {
+      console.error('Error logging out:', error.message);
+      setError(`Failed to log out: ${error.message}`);
+    }
+  };
+
+
+  // Fetch todos from Supabase for the user
   const fetchTodos = async () => {
+    console.log('fetchTodos called. Current user:', user);
+
+    if (!user) {
+      console.log('No user logged in, clearing todos.');
+      setTodos([]); // Clear todos if no user is logged in
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
-      // In a real app with RLS, you would filter by the logged-in user's ID like this:
-      // const { data, error } = await supabase
-      //   .from('todos')
-      //   .select('*')
-      //   .eq('user_id', (await supabase.auth.getUser()).data.user.id) // Requires authenticated user
-      //   .order('created_at', { ascending: true });
+      setError(null); // Clear previous errors
+
+      console.log('Fetching todos for user :', user.id); // Log the user ID being used
 
       const { data, error } = await supabase
         .from('todos')
         .select('*')
+        .eq('user_id', user.id) // Filter by the logged-in user's ID
         .order('created_at', { ascending: true });
 
-
       if (error) {
-        throw error;
+        console.error('Supabase fetch error:', error.message); // Log Supabase error
+        throw error; // Throw the error to be caught by the catch block
       }
+
       setTodos(data);
     } catch (error) {
-      console.error('Error fetching todos:', error.message);
-      setError('Failed to fetch todos.');
+      console.error('Error in fetchTodos:', error.message); // Log error
+      setError(`Failed to fetch todos: ${error.message}`); // error message from Supabase
     } finally {
       setLoading(false);
+      console.log('fetchTodos finished.');
     }
   };
+
+  // Fetch todos whenever the user changes
+  useEffect(() => {
+      console.log('User prop changed, fetching todos.');
+      fetchTodos();
+  }, [user]); 
+
 
   // Add a new todo
   const addTodo = async (e) => {
     e.preventDefault();
     if (!newTaskDescription.trim()) return;
 
-    try {
+    if (!user) {
+      setError('User not available. Cannot add todo.');
+      return;
+    }
 
+    try {
       const { data, error } = await supabase
         .from('todos')
         .insert([
-          { description: newTaskDescription, is_completed: false }
-        ]);
-
+          { description: newTaskDescription, is_completed: false, user_id: user.id }
+        ])
+        .select(); // to return the inserted row
 
       if (error) {
         throw error;
       }
 
+      // Check if data is not null and has at least one item
       if (data && data.length > 0) {
          setTodos([...todos, data[0]]);
       } else {
+         // If data is null or empty, refetch the list to be safe
          fetchTodos();
       }
 
-      setNewTaskDescription(''); 
+      setNewTaskDescription(''); // Clear the input field
     } catch (error) {
       console.error('Error adding todo:', error.message);
       setError(`Failed to add todo: ${error.message}`);
     }
   };
 
-  // Update a todo 
+  // Update a todo (TRUE/FALSE)
   const updateTodo = async (id, currentStatus) => {
+      if (!user) {
+          setError('User not available. Cannot update todo.');
+          return;
+      }
     try {
+       // With RLS, the policy would ensure the user can only update their own todos
       const { data, error } = await supabase
         .from('todos')
         .update({ is_completed: !currentStatus })
-        .match({ id });
+        .match({ id, user_id: user.id });
 
       if (error) {
         throw error;
       }
 
+      // Update the state 
       setTodos(todos.map(todo =>
         todo.id === id ? { ...todo, is_completed: !currentStatus } : todo
       ));
     } catch (error) {
-      console.error('Error updating todo:', error.message);
-      setError(`Failed to update todo: ${error.message}`); 
+      setError(`Failed to update todo: ${error.message}`);
     }
   };
 
   // Delete a todo
   const deleteTodo = async (id) => {
+      if (!user) {
+          setError('User not available. Cannot delete todo.');
+          return;
+      }
     try {
       const { data, error } = await supabase
         .from('todos')
         .delete()
-        .match({ id });
+        .match({ id, user_id: user.id });
 
       if (error) {
         throw error;
@@ -102,28 +151,39 @@ const TodoList = () => {
 
       setTodos(todos.filter(todo => todo.id !== id));
     } catch (error) {
-      console.error('Error deleting todo:', error.message);
-      setError(`Failed to delete todo: ${error.message}`); 
+      setError(`Failed to delete todo: ${error.message}`);
     }
   };
 
-  // Fetch todos when the component mounts
-  useEffect(() => {
-    fetchTodos();
-  }, []); // Empty dependency array means this runs once on mount
-
   if (loading) {
-    return <div className="loading">Loading...</div>;
+    return <div className="loading">Loading Todos...</div>;
   }
 
   if (error) {
     return <div className="error">Error: {error}</div>;
   }
 
+  if (!user) {
+      return (
+          <div className="container">
+              <h1 className="title">Supabase Todo App</h1>
+              <p>Please log in to see and manage your todos.</p>
+          </div>
+      );
+  }
+
   return (
     <div className="container">
-      <h1 className="title">Supabase Todo App</h1>
+      <div className="header"> 
+         <h1 className="title">My To-Do-List</h1>
+         <div className="user-info">
+             <p>Logged in as: {user.email}</p>
+             <button onClick={handleLogout} className="logout-button">Logout</button>
+         </div>
+      </div>
 
+
+      {/* Add New Todo Form */}
       <form onSubmit={addTodo} className="add-todo-form">
         <input
           type="text"
